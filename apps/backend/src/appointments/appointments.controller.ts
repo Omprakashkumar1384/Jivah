@@ -2,6 +2,7 @@ import { Body, Controller, Get, Param, Post, Patch, Req, UseGuards, ForbiddenExc
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { AppointmentsService } from './appointments.service';
 import { CreateAppointmentDto } from './dto/create-appointment.dto';
+import { AppointmentStatus } from './appointment.entity';
 
 @Controller('appointments')
 @UseGuards(JwtAuthGuard)
@@ -32,6 +33,18 @@ export class AppointmentsController {
       throw new ForbiddenException('Only doctors can view their queue');
     }
     return this.appointmentsService.findDoctorQueue(req.user.id);
+  }
+
+  @Patch(':id/status')
+  updateStatus(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() body: { status: AppointmentStatus; queuePosition?: number },
+  ) {
+    if (!['doctor', 'staff', 'hospital_head'].includes(req.user.role)) {
+      throw new ForbiddenException('Not authorized to update appointment status');
+    }
+    return this.appointmentsService.updateStatus(id, body.status, body.queuePosition, req.user.id);
   }
 
   @Get(':id')

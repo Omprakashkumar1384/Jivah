@@ -3,18 +3,31 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Appointment, AppointmentStatus } from './appointment.entity';
 import { CreateAppointmentDto } from './dto/create-appointment.dto';
+import { RedisService } from '../redis/redis.service';
 
 @Injectable()
 export class AppointmentsService {
   constructor(
     @InjectRepository(Appointment)
     private appointmentRepo: Repository<Appointment>,
+    private redisService: RedisService,
   ) {}
 
   private generateBookingNumber(): string {
     const timestamp = Date.now().toString().slice(-8);
     const random = Math.floor(1000 + Math.random() * 9000);
     return `JVH${timestamp}${random}`;
+  }
+
+  private async publishUpdate(appointment: Appointment) {
+    const payload = JSON.stringify({
+      appointmentId: appointment.id,
+      hospitalId: appointment.hospital_id,
+      patientId: appointment.patient_id,
+      status: appointment.status,
+      queuePosition: appointment.queue_position,
+    });
+    await this.redisService.publish('queue-updates', payload);
   }
 
   async create(patientId: string, dto: CreateAppointmentDto) {
@@ -28,7 +41,9 @@ export class AppointmentsService {
       status: AppointmentStatus.PENDING_PAYMENT,
     });
 
-    return this.appointmentRepo.save(appointment);
+    const saved = await this.appointmentRepo.save(appointment);
+    await this.publishUpdate(saved);
+    return saved;
   }
 
   async findMine(patientId: string) {
@@ -55,7 +70,9 @@ export class AppointmentsService {
   async cancel(id: string, patientId: string) {
     const appointment = await this.findOne(id, patientId);
     appointment.status = AppointmentStatus.CANCELLED;
-    return this.appointmentRepo.save(appointment);
+    const saved = await this.appointmentRepo.save(appointment);
+    await this.publishUpdate(saved);
+    return saved;
   }
 
   async findHospitalPatients(hospitalId: string) {
@@ -93,5 +110,22 @@ export class AppointmentsService {
       .andWhere("appointment.status != 'cancelled'")
       .orderBy('appointment.created_at', 'DESC')
       .getRawMany();
+  }
+
+  async updateStatus(id: string, status: AppointmentStatus, queuePosition: number | undefined, actorId: string) {
+    const appointment = await this.appointmentRepo.findOne({ where: { id } });
+
+    if (!appointment) {
+      throw new NotFoundException('Appointment not found');
+    }
+
+    appointment.status = status;
+    if (queuePosition !== undefined) {
+      appointment.queue_position = queuePosition;
+    }
+
+    const saved = await this.appointmentRepo.save(appointment);
+    await this.publishUpdate(saved);
+    return saved;
   }
 }
