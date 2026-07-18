@@ -7,7 +7,6 @@ import { User } from '../users/user.entity';
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { JwtStrategy } from './jwt.strategy';
-import { UsersController } from '../users/users.controller';
 
 @Module({
   imports: [
@@ -22,7 +21,7 @@ import { UsersController } from '../users/users.controller';
       }),
     }),
   ],
-  controllers: [AuthController, UsersController],
+  controllers: [AuthController],
   providers: [AuthService, JwtStrategy],
   exports: [AuthService],
 })
